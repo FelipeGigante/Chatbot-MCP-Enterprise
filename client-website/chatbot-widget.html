@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Chatbot RAG MVP</title>
+    <style>
+        /* Estilos básicos para o chatbot widget */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; background-color: #f7f9fc; }
+        #chat-log { flex-grow: 1; padding: 15px; overflow-y: auto; background: white; border-bottom: 1px solid #e0e0e0; scroll-behavior: smooth; }
+        .message { margin-bottom: 12px; padding: 10px; border-radius: 18px; max-width: 85%; line-height: 1.4; box-shadow: 0 1px 1px rgba(0,0,0,0.05); }
+        .user-msg { background-color: #007bff; color: white; margin-left: auto; border-bottom-right-radius: 4px; }
+        .bot-msg { background-color: #e9ecef; color: #333; margin-right: auto; border-bottom-left-radius: 4px; }
+        #chat-input-form { display: flex; padding: 10px; background: #fff; border-top: 1px solid #e0e0e0; }
+        #user-input { flex-grow: 1; padding: 12px; border: 1px solid #ccc; border-radius: 20px; margin-right: 10px; font-size: 14px; }
+        button { background-color: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 20px; cursor: pointer; transition: background-color 0.2s; }
+        button:hover:not(:disabled) { background-color: #218838; }
+        button:disabled { background-color: #90ee90; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div id="chat-log">
+        <div class="message bot-msg">Olá! Sou o assistente RAG da Pedro Sampaio. Em que posso ajudar com seus documentos?</div>
+    </div>
+    <form id="chat-input-form">
+        <input type="text" id="user-input" placeholder="Pergunte sobre sua base de conhecimento..." required>
+        <button type="submit" id="send-btn">Enviar</button>
+    </form>
+
+    <script>
+        const chatLog = document.getElementById('chat-log');
+        const chatForm = document.getElementById('chat-input-form');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        
+        // 1. EXTRAÇÃO DO TOKEN (CRUCIAL PARA O MULTI-TENANCY)
+        const urlParams = new URLSearchParams(window.location.search);
+        // O token é passado na URL do iframe: .../chatbot-widget.html?token=SEU_TOKEN
+        const clientToken = urlParams.get('token');
+        const BACKEND_URL = 'http://localhost:8000/api/v1/chat'; // URL do seu FastAPI
+
+        if (!clientToken) {
+            addMessage("Erro de Configuração: Token de cliente não encontrado na URL.", 'bot');
+            sendBtn.disabled = true;
+        }
+
+        function addMessage(text, sender) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message', sender === 'user' ? 'user-msg' : 'bot-msg');
+            msgDiv.textContent = text;
+            chatLog.appendChild(msgDiv);
+            chatLog.scrollTop = chatLog.scrollHeight; 
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = userInput.value.trim();
+            if (!query || !clientToken) return;
+
+            addMessage(query, 'user');
+            userInput.value = '';
+            sendBtn.disabled = true;
+            userInput.disabled = true; // Desabilitar input enquanto espera
+
+            try {
+                // 2. CHAMADA AO BACKEND PYTHON VIA FETCH API
+                const response = await fetch(BACKEND_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        query: query, 
+                        client_token: clientToken 
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    addMessage(data.answer, 'bot');
+                } else {
+                    // Trata erros de validação (422) ou autorização (401)
+                    const errorMsg = data.detail ? data.detail[0].msg : data.detail || "Erro desconhecido na API.";
+                    addMessage(`API Error: ${errorMsg}`, 'bot');
+                }
+
+            } catch (error) {
+                console.error('Erro na comunicação de rede:', error);
+                addMessage('Ocorreu um erro de rede. Verifique o servidor Python.', 'bot');
+            } finally {
+                sendBtn.disabled = false;
+                userInput.disabled = false;
+                userInput.focus();
+            }
+        });
+    </script>
+</body>
+</html>

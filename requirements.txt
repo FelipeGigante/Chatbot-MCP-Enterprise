@@ -1,0 +1,28 @@
+# --- FASTAPI & SERVER ---
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-multipart
+
+# --- DATABASE & ORM ---
+psycopg2-binary        
+sqlalchemy             
+alembic                
+
+# --- SECURITY & AUTHENTICATION ---
+passlib[bcrypt]        
+python-jose[cryptography] 
+python-dotenv          
+
+# --- RAG CORE & LLMs ---
+openai                 
+tiktoken               
+langchain              
+langchain-community    
+langchain-openai       
+pypdf                  
+
+# --- ASSYNCHRONOUS PROCESSING ---
+redis                  
+celery                 
