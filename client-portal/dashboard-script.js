@@ -6,22 +6,15 @@ const statusDiv = document.getElementById("upload-status");
 const iframeDisplay = document.getElementById("iframe-code-display");
 const historySection = document.getElementById('history-list');
 
-// --- 1. Lógica de Inicialização e Segurança ---
 if (!ACCESS_TOKEN || !CLIENT_TOKEN) {
-  // Redireciona para o login se não houver token
   window.location.href = "login.html"; 
 }
 
-// Inicializa a exibição do Iframe e Histórico
 document.addEventListener('DOMContentLoaded', () => {
-    // Exibe o iframe completo
     iframeDisplay.textContent = generateIframeCode(CLIENT_TOKEN);
-    // Carrega o histórico ao iniciar
-    fetchHistory();
+    fetchHistory(); 
 });
 
-
-// --- 2. Funções de Utilitários ---
 
 function generateIframeCode(token) {
   return `<div style="position: fixed; bottom: 20px; right: 20px; width: 380px; height: 500px; z-index: 9999; box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2); border-radius: 15px; overflow: hidden;">
@@ -33,7 +26,6 @@ function copyIframeCode() {
   navigator.clipboard
     .writeText(iframeDisplay.textContent)
     .then(() => {
-      // Feedback visual para o botão de copiar
       const copyBtn = document.querySelector(".copy-btn");
       const originalText = copyBtn.innerHTML;
       copyBtn.innerHTML = `
@@ -42,12 +34,12 @@ function copyIframeCode() {
                 </svg>
                 Copiado!
             `;
-      copyBtn.style.background = "#28a745"; // Verde Sucesso
+      copyBtn.style.background = "#28a745"; 
       copyBtn.style.borderColor = "#218838";
 
       setTimeout(() => {
         copyBtn.innerHTML = originalText;
-        copyBtn.style.background = ""; // Retorna ao estilo original
+        copyBtn.style.background = ""; 
         copyBtn.style.borderColor = "";
       }, 2000);
     })
@@ -64,12 +56,9 @@ function logout() {
 
 function showStatus(message, type) {
   statusDiv.textContent = message;
-  // classes: success, error, loading
   statusDiv.className = `upload-status ${type}`;
 }
 
-
-// --- 3. Lógica de Upload Assíncrono ---
 
 document.getElementById("upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -82,13 +71,8 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     return;
   }
   
-  // Validação de tipo e tamanho (Prática de boa engenharia)
-  if (file.type !== "application/pdf") {
-    showStatus("Apenas arquivos PDF são aceitos.", "error");
-    return;
-  }
-  if (file.size > 10 * 1024 * 1024) { // 10MB
-    showStatus("O arquivo deve ter no máximo 10MB.", "error");
+  if (file.type !== "application/pdf" || file.size > 10 * 1024 * 1024) {
+    showStatus("Validação falhou. Apenas PDF (máx. 10MB) é aceito.", "error");
     return;
   }
 
@@ -96,7 +80,7 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
   formData.append("file", file);
 
   // Status de Processando (Início da chamada assíncrona)
-  showStatus("Documento recebido. Indexação em segundo plano...", "loading");
+  showStatus("Documento recebido. Indexação em segundo plano. Recarregue a página em alguns instantes para ver o status.", "loading");
 
   try {
     const response = await fetch(`${API_BASE}/documents/upload`, {
@@ -110,12 +94,12 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     const result = await response.json();
 
     if (response.status === 202) { // 202 Accepted - Assíncrono
-        showStatus(`Sucesso! Processamento iniciado (ID: ${result.client_id}). O status será atualizado no histórico.`, "success");
+        // Feedback de sucesso, instrui o cliente a recarregar.
+        showStatus(`Sucesso! Processamento iniciado (ID: ${result.client_id}). Status aparecerá no histórico.`, "success");
         fileInput.value = ""; // Limpa o input
-        // Atualiza o histórico para mostrar o item PENDENTE
-        setTimeout(fetchHistory, 1000); 
+        
+        
     } else {
-        // Erros 400/500/503 do backend
         const errorDetail = result.detail || "Falha no servidor. Tente novamente.";
         showStatus(`Erro: ${errorDetail}`, "error");
     }
@@ -127,10 +111,9 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
 });
 
 
-// --- 4. Lógica de Histórico de Documentos (Assíncrono) ---
+// --- 4. Lógica de Histórico de Documentos  ---
 
 async function fetchHistory() {
-    // Exibe o estado de carregamento inicial
     historySection.innerHTML = '<p class="loading-state">Carregando histórico...</p>';
     
     try {
@@ -145,7 +128,7 @@ async function fetchHistory() {
         historySection.innerHTML = ''; // Limpa o carregamento
 
         if (documents.length === 0) {
-            historySection.innerHTML = '<p class="loading-state">Nenhum documento subido ainda. Faça seu primeiro upload!</p>';
+            historySection.innerHTML = '<p class="loading-state">Nenhum documento finalizado ainda. Faça seu primeiro upload!</p>';
             docCountDisplay.textContent = '0';
             return;
         }
@@ -160,13 +143,10 @@ async function fetchHistory() {
             // Mapeamento de status para exibição
             if (statusLower === 'completed') {
                 statusText = 'CONCLUÍDO';
-            } else if (statusLower === 'failed') {
-                statusText = 'FALHOU';
             } else {
-                statusText = 'PROCESSANDO...';
+                statusText = 'FALHOU'; 
             }
             
-            // Link de visualização só se COMPLETED
             const downloadLink = doc.status === 'COMPLETED' 
                 ? `<a href="${API_BASE}/documents/download/${doc.id}" target="_blank" class="download-link">Visualizar</a>` 
                 : '<span>-</span>';
@@ -185,13 +165,9 @@ async function fetchHistory() {
 
     } catch (error) {
         console.error('Erro ao buscar histórico:', error);
-        historySection.innerHTML = '<p class="error-message">Erro ao carregar o histórico de documentos.</p>';
+        historySection.innerHTML = '<p class="error-message">Erro ao carregar o histórico de documentos. Tente recarregar a página.</p>';
     }
 }
-
-// Configura um polling simples para atualizar o status a cada 10 segundos
-// Isso é crucial para o modelo assíncrono
-setInterval(fetchHistory, 10000); 
 
 // File input visual feedback
 document.getElementById("file-upload").addEventListener("change", (e) => {

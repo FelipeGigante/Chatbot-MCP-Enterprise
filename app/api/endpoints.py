@@ -1,23 +1,23 @@
 import os
 import shutil
 import uuid
+from typing import List
+
 from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
-from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import FileResponse
+from mimetypes import guess_type
+from sqlalchemy.orm import Session
+
 from app.core.models import Document, DocumentStatus
-from app.services.rag_service import ingest_document_task
-from app.services.rag_service import ingest_document, query_rag_service
+from app.services.rag_service import ingest_document_task, rag_service_instance
 from app.api.schemas import ChatQuery, ChatResponse, UploadResponse, DocumentSchema
 from app.core.config import settings
 from app.core.security import get_password_hash, create_access_token, decode_access_token, verify_password 
-from app.api.schemas import ClientCreate, ClientLogin, Token, TokenData
-from sqlalchemy.orm import Session
+from app.api.schemas import ClientCreate, ClientLogin, Token
 from app.core.db import get_db
 from app.core.models import Client
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError 
-from fastapi.responses import FileResponse
-from mimetypes import guess_type
-from typing import List
+
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -54,20 +54,6 @@ async def get_current_client_token(token: str = Depends(oauth2_scheme)) -> str:
     
     return client_token_from_jwt
 
-def validate_client_token(client_token: str, db: Session) -> str:
-    """Verifica se o token existe e está ativo no PostgreSQL."""
-    client = db.query(Client).filter(
-        Client.client_token == client_token,
-        Client.is_active == True
-    ).first()
-    
-    if not client:
-        raise HTTPException(
-            status_code=401, 
-            detail="Token de cliente inválido ou não autorizado. Cliente não encontrado ou inativo."
-        )
-        
-    return client.client_token
 
 @router.post("/documents/upload", response_model=UploadResponse, status_code=202)
 async def upload_document(
@@ -124,7 +110,7 @@ async def upload_document(
 @router.post("/chat", response_model=ChatResponse)
 async def chat_query(data: ChatQuery, db: Session = Depends(get_db)):
     tenant_id = validate_client_token(data.client_token, db)
-    answer = query_rag_service(data.query, tenant_id)
+    answer = rag_service_instance.query_rag_service(data.query, tenant_id)
     
     if "Desculpe, houve um erro interno" in answer:
         raise HTTPException(status_code=503, detail=answer)

@@ -21,11 +21,11 @@ class Token(BaseModel):
     """Resposta com o Access Token e o tipo."""
     access_token: str
     token_type: str = "bearer"
-    client_token: str # Retornamos o client_token para ser usado no iframe
+    client_token: str 
 
 class TokenData(BaseModel):
     """Dados contidos dentro do JWT."""
-    sub: Optional[str] = None # 'sub' é o padrão JWT para Subject
+    sub: Optional[str] = None 
 
 class ClientCreate(BaseModel):
     """Dados para criação de um novo cliente (cadastro)."""

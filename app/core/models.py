@@ -41,7 +41,7 @@ class Document(Base):
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     
     status = Column(
-        Enum('PENDENTE', 'PROCESSANDO', 'CONCLUÍDO', 'FALHOU', name="document_status_enum"),
-        default='PENDENTE',
+        Enum(DocumentStatus, values_callable=lambda x: [e.value for e in x], name="document_status_enum"),
+        default=DocumentStatus.PENDING, 
         nullable=False
     )
