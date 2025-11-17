@@ -157,37 +157,38 @@ def ingest_document_task(self, document_id: int):
     file_path_to_clean = doc.file_path 
     client_id_for_chroma = doc.client_id
     
-    doc.status = DocumentStatus.PROCESSING.value 
-    db.commit() 
+    status_final = DocumentStatus.FAILED
 
     try:
+        doc.status = DocumentStatus.PROCESSING.value 
+        db.commit() 
+        
         success = rag_service_instance.ingest_document(
             file_path=file_path_to_clean,
             client_id=client_id_for_chroma
         )
         
         if not success:
-            raise Exception("Falha na indexação do documento (verifique logs do RAGService).")
+            raise Exception("Falha na indexação do documento.")
 
-        doc.status = DocumentStatus.COMPLETED.value
-        db.commit()
+        status_final = DocumentStatus.COMPLETED
+        reason = "Sucesso na indexação."
         
-        db.close()
-        return {"status": "SUCCESS", "client_id": doc.client_id}
-    
     except Exception as e:
-        db.rollback() 
+        status_final = DocumentStatus.FAILED
+        reason = str(e)
         
+    finally:
         db.execute(
             update(DocumentModel)
             .where(DocumentModel.id == document_id)
-            .values(status=DocumentStatus.FAILED.value)
+            .values(status=status_final.value)
         )
         db.commit() 
         
-        if os.path.exists(file_path_to_clean): 
-            os.remove(file_path_to_clean) 
-            
+        if status_final == DocumentStatus.COMPLETED and os.path.exists(file_path_to_clean):
+            os.remove(file_path_to_clean)
+        
         db.close()
         
-        return {'status': 'FAILED', 'reason': str(e)}
+        return {'status': status_final.name, 'reason': reason if status_final == DocumentStatus.FAILED else "Sucesso na indexação."}

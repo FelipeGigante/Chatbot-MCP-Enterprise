@@ -16,6 +16,7 @@ class UploadResponse(BaseModel):
     message: str
     filename: str
     client_id: str
+    doc_id: int
 
 class Token(BaseModel):
     """Resposta com o Access Token e o tipo."""

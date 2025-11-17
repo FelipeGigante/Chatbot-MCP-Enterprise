@@ -6,6 +6,10 @@ const statusDiv = document.getElementById("upload-status");
 const iframeDisplay = document.getElementById("iframe-code-display");
 const historySection = document.getElementById('history-list');
 
+let pollingInterval = null; 
+const POLLING_RATE_MS = 8000; 
+
+
 if (!ACCESS_TOKEN || !CLIENT_TOKEN) {
   window.location.href = "login.html"; 
 }
@@ -60,6 +64,60 @@ function showStatus(message, type) {
 }
 
 
+function startStatusPolling(docId) {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+    }
+
+    pollingInterval = setInterval(() => {
+        checkDocumentStatus(docId);
+    }, POLLING_RATE_MS);
+}
+
+function stopStatusPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+}
+
+async function checkDocumentStatus(docId) {
+    try {
+        const response = await fetch(`${API_BASE}/documents`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
+        });
+
+        if (!response.ok) {
+            stopStatusPolling();
+            throw new Error(`Erro ${response.status} ao buscar status.`);
+        }
+        
+        const documents = await response.json();
+        const targetDoc = documents.find(doc => doc.id === docId);
+
+        if (targetDoc) {
+            const statusLower = targetDoc.status.toLowerCase();
+
+            if (statusLower === 'concluído' || statusLower === 'falhou') {
+                stopStatusPolling();
+                fetchHistory();
+                return;
+            }
+        } else {
+            // Se o documento não for encontrado após um tempo, pode ter sido um erro de registro inicial
+            console.warn("Documento não encontrado na lista de status. Continuando polling.");
+            // Não paramos o polling aqui para o caso de a lista demorar a ser populada
+        }
+
+    } catch (error) {
+        console.error("Erro no polling:", error);
+        stopStatusPolling();
+        showStatus("Erro de rede durante a verificação de status.", "error");
+    }
+}
+
+
 document.getElementById("upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -79,8 +137,7 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
   const formData = new FormData();
   formData.append("file", file);
 
-  // Status de Processando (Início da chamada assíncrona)
-  showStatus("Documento recebido. Indexação em segundo plano. Recarregue a página em alguns instantes para ver o status.", "loading");
+  showStatus("Documento recebido. Indexação em segundo plano...", "loading");
 
   try {
     const response = await fetch(`${API_BASE}/documents/upload`, {
@@ -93,14 +150,29 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     
     const result = await response.json();
 
-    if (response.status === 202) { // 202 Accepted - Assíncrono
-        // Feedback de sucesso, instrui o cliente a recarregar.
-        showStatus(`Sucesso! Processamento iniciado (ID: ${result.client_id}). Status aparecerá no histórico.`, "success");
-        fileInput.value = ""; // Limpa o input
+    if (response.status === 202) { 
+        showStatus(`Sucesso! Processamento iniciado. Status será monitorado.`, "success");
+        fileInput.value = ""; 
         
+        // Inicia o Polling usando o ID do documento.
+        // É essencial que o backend retorne o doc_id aqui.
+        if (result.doc_id) { 
+            startStatusPolling(result.doc_id); 
+            setTimeout(fetchHistory, 500); // Atualiza para mostrar PENDENTE/PROCESSANDO
+        } else {
+             showStatus("Sucesso no envio, mas ID do documento não retornado. Recarregue a página para verificar.", "warning");
+        }
         
+    } else if (response.status === 401) {
+        showStatus("Erro de autenticação. Sessão expirada. Faça o login novamente.", "error");
+        setTimeout(logout, 2000);
+    } else if (response.status === 400) {
+        const errorDetail = result.detail || "Erro de validação.";
+        showStatus(`Erro: ${errorDetail}`, "error");
+    } else if (response.status === 503) {
+        showStatus("Serviço de fila indisponível (Redis/Celery). Tente mais tarde.", "error");
     } else {
-        const errorDetail = result.detail || "Falha no servidor. Tente novamente.";
+        const errorDetail = result.detail || "Falha desconhecida no servidor.";
         showStatus(`Erro: ${errorDetail}`, "error");
     }
     
@@ -111,8 +183,6 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
 });
 
 
-// --- 4. Lógica de Histórico de Documentos  ---
-
 async function fetchHistory() {
     historySection.innerHTML = '<p class="loading-state">Carregando histórico...</p>';
     
@@ -122,10 +192,18 @@ async function fetchHistory() {
             headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
         });
         
+        if (response.status === 401) {
+             historySection.innerHTML = '<p class="error-message">Sessão expirada. Recarregue e faça o login novamente.</p>';
+             return;
+        }
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status} ao buscar dados.`);
+        }
+        
         const documents = await response.json();
         const docCountDisplay = document.getElementById('doc-count');
         
-        historySection.innerHTML = ''; // Limpa o carregamento
+        historySection.innerHTML = ''; 
 
         if (documents.length === 0) {
             historySection.innerHTML = '<p class="loading-state">Nenhum documento finalizado ainda. Faça seu primeiro upload!</p>';
@@ -136,26 +214,31 @@ async function fetchHistory() {
         docCountDisplay.textContent = documents.length;
 
         const listHtml = documents.map(doc => {
+            const statusUpper = doc.status.toUpperCase();           
             const date = new Date(doc.uploaded_at).toLocaleDateString('pt-BR');
-            const statusLower = doc.status.toLowerCase();
             let statusText;
+            let statusClass;
             
-            // Mapeamento de status para exibição
-            if (statusLower === 'completed') {
+            if (statusUpper === 'CONCLUÍDO') {
                 statusText = 'CONCLUÍDO';
+                statusClass = 'completed';
+            } else if (statusUpper === 'FALHOU') {
+                statusText = 'FALHOU';
+                statusClass = 'failed';
             } else {
-                statusText = 'FALHOU'; 
+                statusText = 'PROCESSANDO...'; 
+                statusClass = 'processing';
             }
             
-            const downloadLink = doc.status === 'COMPLETED' 
-                ? `<a href="${API_BASE}/documents/download/${doc.id}" target="_blank" class="download-link">Visualizar</a>` 
+            const downloadLink = statusUpper === 'CONCLUÍDO' 
+                ? `<a href="${API_BASE}/documents/download/${doc.id}" target="_blank" class="download-link">&nbsp Visualizar</a>` 
                 : '<span>-</span>';
 
             return `
-                <li class="history-item status-${statusLower}">
+                <li class="history-item status-${statusClass}">
                     <span class="filename">${doc.filename}</span>
                     <span class="date">${date}</span>
-                    <span class="status ${statusLower}">${statusText}</span>
+                    <span class="status ${statusClass}">${statusText}</span>
                     <span class="action">${downloadLink}</span>
                 </li>
             `;
@@ -169,7 +252,7 @@ async function fetchHistory() {
     }
 }
 
-// File input visual feedback
+
 document.getElementById("file-upload").addEventListener("change", (e) => {
   const fileName = e.target.files[0]?.name
   if (fileName) {

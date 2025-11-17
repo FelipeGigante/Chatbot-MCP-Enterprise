@@ -9,14 +9,12 @@ from fastapi.responses import FileResponse
 from mimetypes import guess_type
 from sqlalchemy.orm import Session
 
-from app.core.models import Document, DocumentStatus
+from app.core.models import Document, DocumentStatus, Client
 from app.services.rag_service import ingest_document_task, rag_service_instance
-from app.api.schemas import ChatQuery, ChatResponse, UploadResponse, DocumentSchema
+from app.api.schemas import ChatQuery, ChatResponse, UploadResponse, DocumentSchema, ClientCreate, ClientLogin, Token
 from app.core.config import settings
 from app.core.security import get_password_hash, create_access_token, decode_access_token, verify_password 
-from app.api.schemas import ClientCreate, ClientLogin, Token
 from app.core.db import get_db
-from app.core.models import Client
 
 
 router = APIRouter()
@@ -64,7 +62,7 @@ async def upload_document(
     if not file.filename.lower().endswith(('.pdf')):
         raise HTTPException(
             status_code=400, 
-            detail="Formato de arquivo não suportado. Apenas PDF é permitido neste MVP."
+            detail="Formato de arquivo não suportado. Apenas PDF é permitido."
         )
 
     safe_filename = f"{client_token}_{uuid.uuid4().hex}_{file.filename}"
@@ -94,7 +92,8 @@ async def upload_document(
         return UploadResponse(
             message=f"Processamento iniciado em segundo plano. ID da Tarefa: {task.id}",
             filename=file.filename,
-            client_id=client_token
+            client_id=client_token,
+            doc_id=new_doc.id
         )
 
     except Exception as e:
@@ -169,8 +168,10 @@ async def get_document_history(
     tenant_id: str = Depends(get_current_client_token),
     db: Session = Depends(get_db)
 ):
-    """Retorna o histórico de uploads do cliente logado."""
-    documents = db.query(Document).filter(Document.client_id == tenant_id).all()
+    documents = db.query(Document).filter(
+        Document.client_id == tenant_id
+    ).all()
+    
     return documents
 
 @router.get("/documents/download/{document_id}")
